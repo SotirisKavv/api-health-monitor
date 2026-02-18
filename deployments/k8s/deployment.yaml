@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: monitor-api
+  name: monitor-api
+  namespace: pulse-check
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: monitor-api
+  template:
+    metadata:
+      labels:
+        app: monitor-api
+    spec:
+      containers:
+        - image: monitor-api:dev
+          imagePullPolicy: IfNotPresent
+          name: monitor-api
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ADDR
+              value: ":8080"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
