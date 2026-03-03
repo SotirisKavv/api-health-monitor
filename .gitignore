@@ -1,0 +1,8 @@
+# Binaries
+/bin/
+
+# SQLite database
+/internal/store/targets.db
+
+# Test outputs
+/test/
