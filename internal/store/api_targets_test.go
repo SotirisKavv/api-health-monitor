@@ -9,13 +9,14 @@ import (
 )
 
 func TestCRUDTarget(t *testing.T) {
-	db := store.NewTargetStore("memory")
-	if db == nil {
+	store, err := store.NewStorage(":memory:")
+	if err != nil {
 		t.Fatal("Failed to initialize memory store")
 	}
-	defer db.Close()
+	defer store.Close()
 
 	ctx := context.Background()
+	db := store.Targets
 
 	// Create
 	created, err := db.CreateTarget(ctx, models.Target{

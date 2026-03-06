@@ -2,7 +2,7 @@
 /bin/
 
 # SQLite database
-/internal/store/targets.db
+/internal/store/monitor.db
 
 # Test outputs
 /test/

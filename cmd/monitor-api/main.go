@@ -10,21 +10,26 @@ import (
 	"time"
 
 	"github.com/SotirisKavv/api-health-monitor/internal/api"
+	"github.com/SotirisKavv/api-health-monitor/internal/probe"
 	"github.com/SotirisKavv/api-health-monitor/internal/store"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
 func main() {
-
-	db := store.NewTargetStore("sqlite")
-	if db == nil {
-		log.Fatal("Failed to initialize sqlite store")
+	// setup storage
+	storage, err := store.NewStorage("monitor.db")
+	if err != nil {
+		log.Fatalf("Failed to initialize storage: %v", err)
 	}
-	defer func() {
-		if err := db.Close(); err != nil {
-			log.Printf("failed to close store: %v", err)
-		}
+	defer storage.Close()
+
+	// probing
+	prober := probe.NewProber(*storage)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		prober.Start()
 	}()
 
 	r := chi.NewRouter()
@@ -43,15 +48,20 @@ func main() {
 		w.Write([]byte("OK"))
 	})
 	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("READY"))
+		if storage != nil {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("READY"))
+		} else {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte("NOT READY"))
+		}
 	})
 	r.Get("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("metrics data"))
 	})
 
-	r.Mount("/v1", TargetRouter(db))
+	r.Mount("/v1", MonitorRouter(storage))
 
 	srv := &http.Server{
 		Addr:         ":8080",
@@ -71,22 +81,24 @@ func main() {
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 	log.Println("shutting down...")
 	_ = srv.Shutdown(ctx)
 }
 
-func TargetRouter(store store.TargetStorage) chi.Router {
+func MonitorRouter(store *store.Storage) chi.Router {
 	r := chi.NewRouter()
-	handler := api.NewTargetHandler(store)
+	targetHandler := api.NewTargetHandler(store.Targets)
+	checkHandler := api.NewCheckHandler(*store)
+
+	r.Get("/status", checkHandler.GetStatus)
 
 	r.Route("/targets", func(r chi.Router) {
-		r.Get("/", handler.ListTargets)
-		r.Get("/{id}", handler.GetTarget)
-		r.Post("/", handler.CreateTarget)
-		r.Patch("/", handler.UpdateTarget)
-		r.Delete("/{id}", handler.DeleteTarget)
+		r.Get("/", targetHandler.ListTargets)
+		r.Get("/{id}", targetHandler.GetTarget)
+		r.Get("/{id}/checks", checkHandler.GetChecksByTarget)
+		r.Post("/", targetHandler.CreateTarget)
+		r.Patch("/", targetHandler.UpdateTarget)
+		r.Delete("/{id}", targetHandler.DeleteTarget)
 	})
 	return r
 }

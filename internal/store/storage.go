@@ -1,25 +1,28 @@
 package store
 
-import (
-	"context"
+import "database/sql"
 
-	"github.com/SotirisKavv/api-health-monitor/internal/models"
-)
-
-type TargetStorage interface {
-	CreateTarget(ctx context.Context, target models.Target) (models.Target, error)
-	GetTarget(ctx context.Context, id string) (models.Target, error)
-	ListTargets(ctx context.Context) ([]models.Target, error)
-	UpdateTarget(ctx context.Context, target models.Target) (models.Target, error)
-	DeleteTarget(ctx context.Context, id string) error
-	Close() error
+type Storage struct {
+	DB      *sql.DB
+	Targets TargetStorage
+	Checks  CheckStorage
 }
 
-func NewTargetStore(storageType string) TargetStorage {
-	switch storageType {
-	case "sqlite":
-		return newSQLiteTargetStore()
-	default:
-		return newMemoryTargetStore()
+func NewStorage(dbPath string) (*Storage, error) {
+	db, err := openDatabase(dbPath)
+	if err != nil {
+		return nil, err
 	}
+	targetStorage := newSQLiteTargetStore(db)
+	checkStorage := newSQLiteCheckStore(db)
+
+	return &Storage{
+		DB:      db,
+		Targets: targetStorage,
+		Checks:  checkStorage,
+	}, nil
+}
+
+func (s *Storage) Close() error {
+	return s.DB.Close()
 }
