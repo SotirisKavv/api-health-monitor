@@ -26,8 +26,8 @@ func (s *SQLiteCheckStore) CreateCheck(ctx context.Context, check models.Check) 
 	if check.ID == "" {
 		check.ID = uuid.New().String()
 	}
-	_, err := s.DB.ExecContext(ctx, "INSERT INTO checks (id, target_id, ok, latency_ms, error_msg) VALUES (?, ?, ?, ?, ?)",
-		check.ID, check.TargetID, check.OK, check.LatencyMS, check.ErrorMsg)
+	_, err := s.DB.ExecContext(ctx, "INSERT INTO checks (id, target_id, ok, status_code, latency_ms, error_msg) VALUES (?, ?, ?, ?, ?)",
+		check.ID, check.TargetID, check.OK, check.StatusCode, check.LatencyMS, check.ErrorMsg)
 	if err != nil {
 		return models.Check{}, err
 	}
@@ -39,7 +39,7 @@ func (s *SQLiteCheckStore) ListChecksByTarget(ctx context.Context, targetID stri
 		limit = 100 // default limit
 	}
 	rows, err := s.DB.QueryContext(ctx, `
-		SELECT checks.id, checks.target_id, checks.ok, checks.latency_ms, checks.error_msg, checks.timestamp
+		SELECT checks.id, checks.target_id, checks.ok, checks.status_code, checks.latency_ms, checks.error_msg, checks.timestamp
 		FROM checks JOIN targets ON checks.target_id = targets.id
 		WHERE checks.target_id = ?
 		ORDER BY checks.timestamp DESC
@@ -55,7 +55,7 @@ func (s *SQLiteCheckStore) ListChecksByTarget(ctx context.Context, targetID stri
 	var checks []models.Check
 	for rows.Next() {
 		var check models.Check
-		if err := rows.Scan(&check.ID, &check.TargetID, &check.OK, &check.LatencyMS, &check.ErrorMsg, &check.Timestamp); err != nil {
+		if err := rows.Scan(&check.ID, &check.TargetID, &check.OK, &check.StatusCode, &check.LatencyMS, &check.ErrorMsg, &check.Timestamp); err != nil {
 			return nil, err
 		}
 		checks = append(checks, check)
@@ -65,7 +65,7 @@ func (s *SQLiteCheckStore) ListChecksByTarget(ctx context.Context, targetID stri
 
 func (s *SQLiteCheckStore) GetLatestChecks(ctx context.Context) ([]models.Check, error) {
 	rows, err := s.DB.QueryContext(ctx, `
-		SELECT checks.id, checks.target_id, checks.ok, checks.latency_ms, checks.error_msg, checks.timestamp
+		SELECT checks.id, checks.target_id, checks.ok, checks.status_code, checks.latency_ms, checks.error_msg, checks.timestamp
 		FROM checks
 		JOIN (
 			SELECT id AS target_id
@@ -87,7 +87,7 @@ func (s *SQLiteCheckStore) GetLatestChecks(ctx context.Context) ([]models.Check,
 	var checks []models.Check
 	for rows.Next() {
 		var check models.Check
-		if err := rows.Scan(&check.ID, &check.TargetID, &check.OK, &check.LatencyMS, &check.ErrorMsg, &check.Timestamp); err != nil {
+		if err := rows.Scan(&check.ID, &check.TargetID, &check.OK, &check.StatusCode, &check.LatencyMS, &check.ErrorMsg, &check.Timestamp); err != nil {
 			return nil, err
 		}
 		checks = append(checks, check)

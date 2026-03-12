@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS checks (
     id TEXT PRIMARY KEY,
     target_id TEXT NOT NULL,
     ok BOOLEAN NOT NULL,
+    status_code INTEGER NOT NULL,
     latency_ms INTEGER NOT NULL,
     error_msg TEXT,
     timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

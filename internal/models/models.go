@@ -12,10 +12,11 @@ type Target struct {
 }
 
 type Check struct {
-	ID        string    `json:"id"`
-	TargetID  string    `json:"target_id"`
-	OK        bool      `json:"ok"`
-	LatencyMS int       `json:"latency_ms"` // in milliseconds
-	ErrorMsg  string    `json:"error_msg,omitempty"`
-	Timestamp time.Time `json:"timestamp"` // Unix timestamp
+	ID         string    `json:"id"`
+	TargetID   string    `json:"target_id"`
+	OK         bool      `json:"ok"`
+	StatusCode int       `json:"status_code"`
+	LatencyMS  int       `json:"latency_ms"` // in milliseconds
+	ErrorMsg   string    `json:"error_msg,omitempty"`
+	Timestamp  time.Time `json:"timestamp"` // Unix timestamp
 }

@@ -1,4 +1,4 @@
-package probe_test
+package probe
 
 import (
 	"context"
@@ -8,9 +8,13 @@ import (
 	"testing"
 	"time"
 
+	"container/heap"
+
+	"github.com/SotirisKavv/api-health-monitor/internal/metrics"
 	"github.com/SotirisKavv/api-health-monitor/internal/models"
-	"github.com/SotirisKavv/api-health-monitor/internal/probe"
 	"github.com/SotirisKavv/api-health-monitor/internal/store"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 func waitForCheckCount(ctx context.Context, t *testing.T, s *store.Storage, targetID string, minCount int) error {
@@ -34,9 +38,26 @@ func waitForCheckCount(ctx context.Context, t *testing.T, s *store.Storage, targ
 	}
 }
 
-func TestProberStart_PersistsSuccessfulCheck(t *testing.T) {
+func newMetricsForTest(t *testing.T) *metrics.Metrics {
+	t.Helper()
+
+	origRegisterer := prometheus.DefaultRegisterer
+	origGatherer := prometheus.DefaultGatherer
+	t.Cleanup(func() {
+		prometheus.DefaultRegisterer = origRegisterer
+		prometheus.DefaultGatherer = origGatherer
+	})
+
+	reg := prometheus.NewRegistry()
+	prometheus.DefaultRegisterer = reg
+	prometheus.DefaultGatherer = reg
+
+	return metrics.New()
+}
+
+func TestExecuteCheck_SuccessStoresCheckAndSetsProbeUp(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
+		w.WriteHeader(http.StatusOK)
 	}))
 	defer ts.Close()
 
@@ -57,15 +78,15 @@ func TestProberStart_PersistsSuccessfulCheck(t *testing.T) {
 		t.Fatalf("CreateTarget() failed: %v", err)
 	}
 
-	p := probe.NewProber(*s)
-	defer p.Stop()
-	p.Start()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
 
-	if err := waitForCheckCount(ctx, t, s, target.ID, 1); err != nil {
-		t.Fatalf("waiting for persisted check failed: %v", err)
+	m := newMetricsForTest(t)
+	p := NewProber(*s, m)
+	defer p.Stop()
+
+	if err := p.executeCheck(ctx, target); err != nil {
+		t.Fatalf("executeCheck() failed: %v", err)
 	}
 
 	checks, err := s.Checks.ListChecksByTarget(context.Background(), target.ID, 1)
@@ -78,9 +99,14 @@ func TestProberStart_PersistsSuccessfulCheck(t *testing.T) {
 	if !checks[0].OK {
 		t.Fatalf("expected persisted check OK=true")
 	}
+
+	probeUp := testutil.ToFloat64(m.ProbeUp.WithLabelValues(target.ID))
+	if probeUp != 1 {
+		t.Fatalf("expected probe_up=1, got %v", probeUp)
+	}
 }
 
-func TestProberStart_PersistsFailedCheck(t *testing.T) {
+func TestExecuteCheck_FailureStoresCheckAndSetsProbeUpZero(t *testing.T) {
 	s, err := store.NewStorage(":memory:")
 	if err != nil {
 		t.Fatalf("NewStorage() failed: %v", err)
@@ -98,12 +124,16 @@ func TestProberStart_PersistsFailedCheck(t *testing.T) {
 		t.Fatalf("CreateTarget() failed: %v", err)
 	}
 
-	p := probe.NewProber(*s)
-	defer p.Stop()
-	p.Start()
-
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
+
+	m := newMetricsForTest(t)
+	p := NewProber(*s, m)
+	defer p.Stop()
+	err = p.executeCheck(ctx, target)
+	if err == nil {
+		t.Fatalf("expected executeCheck() to fail for unreachable target")
+	}
 
 	if err := waitForCheckCount(ctx, t, s, target.ID, 1); err != nil {
 		t.Fatalf("waiting for failed check persistence failed: %v", err)
@@ -121,5 +151,79 @@ func TestProberStart_PersistsFailedCheck(t *testing.T) {
 	}
 	if checks[0].ErrorMsg == "" {
 		t.Fatalf("expected persisted failed check to contain error message")
+	}
+
+	probeUp := testutil.ToFloat64(m.ProbeUp.WithLabelValues(target.ID))
+	if probeUp != 0 {
+		t.Fatalf("expected probe_up=0, got %v", probeUp)
+	}
+}
+
+func TestReady_DependsOnRecentRefresh(t *testing.T) {
+	s, err := store.NewStorage(":memory:")
+	if err != nil {
+		t.Fatalf("NewStorage() failed: %v", err)
+	}
+	defer s.Close()
+
+	p := NewProber(*s, newMetricsForTest(t))
+	defer p.Stop()
+
+	p.lastRefreshAt = time.Now().Add(-11 * time.Second)
+	if p.Ready() {
+		t.Fatalf("expected Ready() to be false when refresh is stale")
+	}
+
+	p.lastRefreshAt = time.Now().Add(-2 * time.Second)
+	if !p.Ready() {
+		t.Fatalf("expected Ready() to be true when refresh is recent")
+	}
+}
+
+func TestRefreshTargets_DoesNotScheduleDuplicatesForSameTarget(t *testing.T) {
+	s, err := store.NewStorage(":memory:")
+	if err != nil {
+		t.Fatalf("NewStorage() failed: %v", err)
+	}
+	defer s.Close()
+
+	_, err = s.Targets.CreateTarget(context.Background(), models.Target{
+		Name:     "stable-target",
+		URL:      "http://example.com",
+		Method:   http.MethodGet,
+		Interval: 30,
+		Enabled:  true,
+	})
+	if err != nil {
+		t.Fatalf("CreateTarget() failed: %v", err)
+	}
+
+	p := NewProber(*s, newMetricsForTest(t))
+	defer p.Stop()
+
+	h := make(PriorityHeap, 0)
+	heap.Init(&h)
+	p.scheduler = &Scheduler{
+		tasks:     &h,
+		taskChan:  make(chan Task, 100),
+		workers:   0,
+		scheduled: make(map[string]Task),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if err := p.refreshTargets(ctx); err != nil {
+		t.Fatalf("first refreshTargets() failed: %v", err)
+	}
+	if got := p.scheduler.tasks.Len(); got != 1 {
+		t.Fatalf("expected one scheduled task after first refresh, got %d", got)
+	}
+
+	if err := p.refreshTargets(ctx); err != nil {
+		t.Fatalf("second refreshTargets() failed: %v", err)
+	}
+	if got := p.scheduler.tasks.Len(); got != 1 {
+		t.Fatalf("expected no duplicate task for unchanged target, got queue size %d", got)
 	}
 }

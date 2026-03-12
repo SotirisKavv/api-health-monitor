@@ -10,11 +10,30 @@ import (
 	"time"
 
 	"github.com/SotirisKavv/api-health-monitor/internal/api"
+	"github.com/SotirisKavv/api-health-monitor/internal/metrics"
 	"github.com/SotirisKavv/api-health-monitor/internal/probe"
 	"github.com/SotirisKavv/api-health-monitor/internal/store"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+type readinessChecker interface {
+	Ready() bool
+}
+
+func readyHandler(storageReady func() bool, checker readinessChecker) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if storageReady() && checker.Ready() {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("READY"))
+			return
+		}
+
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte("NOT READY"))
+	}
+}
 
 func main() {
 	// setup storage
@@ -25,7 +44,8 @@ func main() {
 	defer storage.Close()
 
 	// probing
-	prober := probe.NewProber(*storage)
+	appMetrics := metrics.New()
+	prober := probe.NewProber(*storage, appMetrics)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
@@ -47,19 +67,8 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
-	r.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
-		if storage != nil {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("READY"))
-		} else {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte("NOT READY"))
-		}
-	})
-	r.Get("/metrics", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("metrics data"))
-	})
+	r.Get("/readyz", readyHandler(func() bool { return storage != nil }, prober))
+	r.Handle("/metrics", promhttp.Handler())
 
 	r.Mount("/v1", MonitorRouter(storage))
 
