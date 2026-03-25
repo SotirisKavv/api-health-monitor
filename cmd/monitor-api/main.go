@@ -13,6 +13,7 @@ import (
 	"github.com/SotirisKavv/api-health-monitor/internal/metrics"
 	"github.com/SotirisKavv/api-health-monitor/internal/probe"
 	"github.com/SotirisKavv/api-health-monitor/internal/store"
+	"github.com/SotirisKavv/api-health-monitor/internal/utils"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -37,7 +38,7 @@ func readyHandler(storageReady func() bool, checker readinessChecker) http.Handl
 
 func main() {
 	// setup storage
-	storage, err := store.NewStorage("monitor.db")
+	storage, err := store.NewStorage(utils.GetEnv("DB_PATH", "monitor.db"))
 	if err != nil {
 		log.Fatalf("Failed to initialize storage: %v", err)
 	}
@@ -73,7 +74,7 @@ func main() {
 	r.Mount("/v1", MonitorRouter(storage))
 
 	srv := &http.Server{
-		Addr:         ":8080",
+		Addr:         utils.GetEnv("ADDR", ":8080"),
 		Handler:      r,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,

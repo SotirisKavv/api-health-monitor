@@ -26,7 +26,7 @@ func (s *SQLiteCheckStore) CreateCheck(ctx context.Context, check models.Check) 
 	if check.ID == "" {
 		check.ID = uuid.New().String()
 	}
-	_, err := s.DB.ExecContext(ctx, "INSERT INTO checks (id, target_id, ok, status_code, latency_ms, error_msg) VALUES (?, ?, ?, ?, ?)",
+	_, err := s.DB.ExecContext(ctx, "INSERT INTO checks (id, target_id, ok, status_code, latency_ms, error_msg) VALUES (?, ?, ?, ?, ?, ?)",
 		check.ID, check.TargetID, check.OK, check.StatusCode, check.LatencyMS, check.ErrorMsg)
 	if err != nil {
 		return models.Check{}, err

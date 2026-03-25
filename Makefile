@@ -1,7 +1,9 @@
 BIN_NAME=monitor-api
-MAIN=cmd/monitor-api/main.go
 VERSION?=0.0.0
-DOCKER_REGISTRY?= #if set, it should finish with '/'
+IMAGE_NAME?=api-health-monitor
+IMAGE_TAG?=dev
+IMAGE?=${IMAGE_NAME}:${IMAGE_TAG}
+CONTAINER_NAME?=$(BIN_NAME)
 
 CYAN := $(shell tput -Txterm setaf 6)
 WHITE := $(shell tput -Txterm setaf 7)
@@ -9,7 +11,7 @@ GREEN := $(shell tput -Txterm setaf 2)
 YELLOW := $(shell tput -Txterm setaf 3)
 RESET := $(shell tput -Txterm sgr0)
 
-.PHONY: all test run
+.PHONY: all test run build clean dep tidy docker-build docker-run docker-run-detached docker-release docker-stop help
 
 all: help
 
@@ -17,7 +19,7 @@ all: help
 build: ## Build your project and put the output in bin/
 	mkdir -p bin
 # 	GOARCH=amd64 GOOS=darwin go build -o bin/${BIN_NAME}-darwin ${MAIN}
-	GOARCH=amd64 GOOS=linux go build -o bin/${BIN_NAME}-linux ${MAIN}
+	GOARCH=amd64 GOOS=linux go build -o bin/${BIN_NAME}-linux ./cmd/${BIN_NAME}
 # 	GOARCH=amd64 GOOS=windows go build -o bin/${BIN_NAME}-windows ${MAIN}
 
 run:	build ##Run project
@@ -30,6 +32,9 @@ clean: ## Remove build related file
 dep: ## Download dependecies
 	go mod download
 
+tidy: ## Tidy up the go.mod file
+	go mod tidy
+
 #test
 test: ## Run tests of the project
 	go test -v -race ./...
@@ -41,13 +46,41 @@ test_coverage: ## Run tests and export the coverage
 
 #docker
 docker-build:
-	docker build --rm --tag ${BIN_NAME} .
+	docker build --rm -t ${IMAGE} .
+
+docker-run:
+	mkdir -p data
+	touch data/monitor.db
+	docker run --rm \
+		--name ${CONTAINER_NAME} \
+		-p 8080:8080 \
+		-e ADDR=:8080 \
+		-e DB_PATH=/data/monitor.db \
+		-v $(PWD)/data:/data \
+		${IMAGE}
+
+docker-run-detached:
+	mkdir -p data
+	touch data/monitor.db
+	docker run -d \
+		--name ${CONTAINER_NAME} \
+		-p 8080:8080 \
+		-e ADDR=:8080 \
+		-e DB_PATH=/data/monitor.db \
+		-v $(PWD)/data:/data \
+		${IMAGE}
 
 docker-release:
-	docker tag ${BIN_NAME} ${DOCKER_REGISTRY}${BIN_NAME}:latest
-	docker tag ${BIN_NAME} ${DOCKER_REGISTRY}${BIN_NAME}:${VERSION}
-	docker push ${DOCKER_REGISTRY}${BIN_NAME}:latest
-	docker push ${DOCKER_REGISTRY}${BIN_NAME}:${VERSION}
+	docker tag ${IMAGE} ${IMAGE_NAME}:latest
+	docker tag ${IMAGE} ${IMAGE_NAME}:${VERSION}
+	docker push ${IMAGE_NAME}:latest
+	docker push ${IMAGE_NAME}:${VERSION}
+
+docker-stop:
+	@docker stop ${CONTAINER_NAME} >/dev/null 2>&1 || true
+	@docker rm ${CONTAINER_NAME} >/dev/null 2>&1 || true
+	@docker ps -q --filter ancestor=${IMAGE} | xargs -r docker stop >/dev/null 2>&1 || true
+	@docker ps -aq --filter ancestor=${IMAGE} | xargs -r docker rm >/dev/null 2>&1 || true
 
 help:
 	@echo ''

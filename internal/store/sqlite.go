@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 func openDatabase(dbPath string) (*sql.DB, error) {
@@ -19,7 +19,7 @@ func openDatabase(dbPath string) (*sql.DB, error) {
 		}
 		dbPath = filepath.Join(wd, "internal/store/monitor.db")
 	}
-	db, err := sql.Open("sqlite3", dbPath)
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		log.Fatalf("Failed to open database: %v", err)
 	}
