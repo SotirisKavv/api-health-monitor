@@ -13,7 +13,9 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /bin/monitor-api ./cmd/mon
 
 FROM debian:bookworm-slim
 
-RUN mkdir -p /data
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -p /data
 
 WORKDIR /app
 

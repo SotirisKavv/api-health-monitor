@@ -4,6 +4,10 @@ IMAGE_NAME?=api-health-monitor
 IMAGE_TAG?=dev
 IMAGE?=${IMAGE_NAME}:${IMAGE_TAG}
 CONTAINER_NAME?=$(BIN_NAME)
+K8S_NAMESPACE?=pulse-check
+K8S_DEPLOYMENT?=$(BIN_NAME)
+K8S_IMAGE?=$(BIN_NAME):$(IMAGE_TAG)
+K8S_TAR?=$(BIN_NAME).tar
 
 CYAN := $(shell tput -Txterm setaf 6)
 WHITE := $(shell tput -Txterm setaf 7)
@@ -11,7 +15,7 @@ GREEN := $(shell tput -Txterm setaf 2)
 YELLOW := $(shell tput -Txterm setaf 3)
 RESET := $(shell tput -Txterm sgr0)
 
-.PHONY: all test run build clean dep tidy docker-build docker-run docker-run-detached docker-release docker-stop help
+.PHONY: all test run build clean dep tidy docker-build docker-run docker-run-detached docker-release docker-stop k3s-build k3s-deploy k3s-rollout k8s-apply help
 
 all: help
 
@@ -81,6 +85,22 @@ docker-stop:
 	@docker rm ${CONTAINER_NAME} >/dev/null 2>&1 || true
 	@docker ps -q --filter ancestor=${IMAGE} | xargs -r docker stop >/dev/null 2>&1 || true
 	@docker ps -aq --filter ancestor=${IMAGE} | xargs -r docker rm >/dev/null 2>&1 || true
+
+#k3s
+k3s-build: ## Build image, export tar and import into k3s containerd
+	docker build --rm -t ${K8S_IMAGE} .
+	docker save ${K8S_IMAGE} -o ${K8S_TAR}
+	sudo k3s ctr images import ${K8S_TAR}
+	rm -f ${K8S_TAR}
+
+k3s-deploy: k3s-build k8s-apply k3s-rollout ## Full deploy: build, apply manifests, rollout restart
+
+k8s-apply: ## Apply all Kubernetes manifests
+	sudo k3s kubectl apply -f deployments/k8s/
+
+k3s-rollout: ## Restart the k3s deployment to pick up the new image
+	sudo k3s kubectl rollout restart deployment/${K8S_DEPLOYMENT} -n ${K8S_NAMESPACE}
+	sudo k3s kubectl rollout status deployment/${K8S_DEPLOYMENT} -n ${K8S_NAMESPACE}
 
 help:
 	@echo ''

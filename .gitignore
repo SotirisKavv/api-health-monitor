@@ -3,7 +3,7 @@
 
 # SQLite database
 /internal/store/monitor.db
-/data/monitor.db
+/data/*
 
 # Test outputs
 /test/

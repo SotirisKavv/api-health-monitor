@@ -17,13 +17,18 @@ spec:
     spec:
       containers:
         - image: monitor-api:dev
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Never
           name: monitor-api
           ports:
             - containerPort: 8080
           env:
             - name: ADDR
               value: ":8080"
+            - name: DB_PATH
+              value: "/data/monitor.db"
+          volumeMounts:
+            - name: monitor-data
+              mountPath: /data
           livenessProbe:
             httpGet:
               path: /healthz
@@ -36,3 +41,8 @@ spec:
               port: 8080
             initialDelaySeconds: 5
             periodSeconds: 10
+      volumes:
+        - name: monitor-data
+          hostPath:
+            path: /tmp/monitor-api-data
+            type: DirectoryOrCreate

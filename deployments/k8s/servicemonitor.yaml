@@ -1,0 +1,18 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: monitor-api
+  namespace: monitoring
+  labels:
+    release: prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - pulse-check
+  selector:
+    matchLabels:
+      app: monitor-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 5s

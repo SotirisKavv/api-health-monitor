@@ -64,7 +64,7 @@ func (p *Prober) fetchTargetAPI(ctx context.Context, target models.Target) (mode
 			log.Printf("probe target=%s ok=%t status=%d latency_ms=%d err=%q",
 				check.TargetID, check.OK, resp.StatusCode, latency, err,
 			)
-			p.metrics.ProbeLatencyMs.WithLabelValues(target.ID).Observe(float64(latency))
+			p.metrics.ProbeLatencyMs.WithLabelValues(target.Name).Observe(float64(latency))
 			return check, nil
 		}
 		finalErr = err
@@ -78,7 +78,7 @@ func (p *Prober) fetchTargetAPI(ctx context.Context, target models.Target) (mode
 			log.Printf("probe target=%s ok=%t status=%d latency_ms=%d err=%q",
 				check.TargetID, check.OK, 0, latency, ctx.Err(),
 			)
-			p.metrics.ProbeLatencyMs.WithLabelValues(target.ID).Observe(float64(latency))
+			p.metrics.ProbeLatencyMs.WithLabelValues(target.Name).Observe(float64(latency))
 			check.ErrorMsg = ctx.Err().Error()
 			return check, ctx.Err()
 		}
@@ -93,7 +93,7 @@ func (p *Prober) fetchTargetAPI(ctx context.Context, target models.Target) (mode
 		log.Printf("probe target=%s ok=%t status=%d latency_ms=%d err=%q",
 			check.TargetID, check.OK, 0, latency, finalErr,
 		)
-		p.metrics.ProbeLatencyMs.WithLabelValues(target.ID).Observe(float64(latency))
+		p.metrics.ProbeLatencyMs.WithLabelValues(target.Name).Observe(float64(latency))
 		check.ErrorMsg = finalErr.Error()
 		return check, finalErr
 	}
@@ -107,12 +107,17 @@ func (p *Prober) executeCheck(ctx context.Context, target models.Target) error {
 	check, err := p.fetchTargetAPI(ctx, target)
 
 	if err != nil {
-		p.metrics.ProbeRequestsTotal.WithLabelValues(target.ID, "error").Inc()
-		p.metrics.ProbeUp.WithLabelValues(target.ID).Set(0)
+		p.metrics.ProbeRequestsTotal.WithLabelValues(target.Name, "error").Inc()
+		p.metrics.ProbeUp.WithLabelValues(target.Name).Set(0)
 	} else {
-		p.metrics.ProbeRequestsTotal.WithLabelValues(target.ID, "success").Inc()
-		p.metrics.ProbeUp.WithLabelValues(target.ID).Set(1)
-		p.metrics.ProbeLastSuccesUnix.WithLabelValues(target.ID).Set(float64(time.Now().Unix()))
+		if check.OK {
+			p.metrics.ProbeRequestsTotal.WithLabelValues(target.Name, "success").Inc()
+			p.metrics.ProbeUp.WithLabelValues(target.Name).Set(1)
+			p.metrics.ProbeLastSuccesUnix.WithLabelValues(target.Name).Set(float64(time.Now().Unix()))
+		} else {
+			p.metrics.ProbeRequestsTotal.WithLabelValues(target.Name, "failure").Inc()
+			p.metrics.ProbeUp.WithLabelValues(target.Name).Set(0)
+		}
 	}
 
 	if _, err := p.db.Checks.CreateCheck(ctx, check); err != nil {
