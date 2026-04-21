@@ -1,5 +1,4 @@
 package store
-package store
 
 import (
 	"context"
