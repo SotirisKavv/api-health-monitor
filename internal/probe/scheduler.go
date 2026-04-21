@@ -197,12 +197,14 @@ func (s *Scheduler) adjustWorkers() {
 		taskLen := s.tasks.Len()
 		s.mu.Unlock()
 		idealWorkers := (taskLen / 10) + 1 // 1 worker for 10 tasks
+		s.mu.Lock()
 		if idealWorkers > s.workers {
 			for i := s.workers; i < idealWorkers; i++ {
 				go s.startWorker(i)
 			}
 			s.workers = idealWorkers
 		}
+		s.mu.Unlock()
 	}
 }
 

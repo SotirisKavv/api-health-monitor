@@ -31,6 +31,10 @@ func (s *SQLiteCheckStore) CreateCheck(ctx context.Context, check models.Check) 
 	if err != nil {
 		return models.Check{}, err
 	}
+	row := s.DB.QueryRowContext(ctx, "SELECT id, target_id, ok, status_code, latency_ms, error_msg, timestamp FROM checks WHERE id = ?", check.ID)
+	if err := row.Scan(&check.ID, &check.TargetID, &check.OK, &check.StatusCode, &check.LatencyMS, &check.ErrorMsg, &check.Timestamp); err != nil {
+		return models.Check{}, err
+	}
 	return check, nil
 }
 
@@ -52,7 +56,7 @@ func (s *SQLiteCheckStore) ListChecksByTarget(ctx context.Context, targetID stri
 	}
 	defer rows.Close()
 
-	var checks []models.Check
+	checks := make([]models.Check, 0)
 	for rows.Next() {
 		var check models.Check
 		if err := rows.Scan(&check.ID, &check.TargetID, &check.OK, &check.StatusCode, &check.LatencyMS, &check.ErrorMsg, &check.Timestamp); err != nil {
@@ -84,7 +88,7 @@ func (s *SQLiteCheckStore) GetLatestChecks(ctx context.Context) ([]models.Check,
 	}
 	defer rows.Close()
 
-	var checks []models.Check
+	checks := make([]models.Check, 0)
 	for rows.Next() {
 		var check models.Check
 		if err := rows.Scan(&check.ID, &check.TargetID, &check.OK, &check.StatusCode, &check.LatencyMS, &check.ErrorMsg, &check.Timestamp); err != nil {

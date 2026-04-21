@@ -100,7 +100,7 @@ func TestExecuteCheck_SuccessStoresCheckAndSetsProbeUp(t *testing.T) {
 		t.Fatalf("expected persisted check OK=true")
 	}
 
-	probeUp := testutil.ToFloat64(m.ProbeUp.WithLabelValues(target.ID))
+	probeUp := testutil.ToFloat64(m.ProbeUp.WithLabelValues(target.Name))
 	if probeUp != 1 {
 		t.Fatalf("expected probe_up=1, got %v", probeUp)
 	}
@@ -153,7 +153,7 @@ func TestExecuteCheck_FailureStoresCheckAndSetsProbeUpZero(t *testing.T) {
 		t.Fatalf("expected persisted failed check to contain error message")
 	}
 
-	probeUp := testutil.ToFloat64(m.ProbeUp.WithLabelValues(target.ID))
+	probeUp := testutil.ToFloat64(m.ProbeUp.WithLabelValues(target.Name))
 	if probeUp != 0 {
 		t.Fatalf("expected probe_up=0, got %v", probeUp)
 	}
@@ -225,5 +225,111 @@ func TestRefreshTargets_DoesNotScheduleDuplicatesForSameTarget(t *testing.T) {
 	}
 	if got := p.scheduler.tasks.Len(); got != 1 {
 		t.Fatalf("expected no duplicate task for unchanged target, got queue size %d", got)
+	}
+}
+
+func TestRefreshTargets_RemovesDeletedTargetMetrics(t *testing.T) {
+	s, err := store.NewStorage(":memory:")
+	if err != nil {
+		t.Fatalf("NewStorage() failed: %v", err)
+	}
+	defer s.Close()
+
+	ctx := context.Background()
+	target, err := s.Targets.CreateTarget(ctx, models.Target{
+		Name:     "old-target",
+		URL:      "http://example.com",
+		Method:   http.MethodGet,
+		Interval: 30,
+		Enabled:  true,
+	})
+	if err != nil {
+		t.Fatalf("CreateTarget() failed: %v", err)
+	}
+
+	m := newMetricsForTest(t)
+	p := NewProber(*s, m)
+	defer p.Stop()
+
+	p.targets[target.ID] = target
+	p.metrics.ProbeUp.WithLabelValues(target.Name).Set(1)
+	p.metrics.ProbeRequestsTotal.WithLabelValues(target.Name, "success").Inc()
+
+	h := make(PriorityHeap, 0)
+	heap.Init(&h)
+	p.scheduler = &Scheduler{
+		tasks:     &h,
+		taskChan:  make(chan Task, 100),
+		workers:   0,
+		scheduled: make(map[string]Task),
+	}
+
+	if err := s.Targets.DeleteTarget(ctx, target.ID); err != nil {
+		t.Fatalf("DeleteTarget() failed: %v", err)
+	}
+
+	if err := p.refreshTargets(ctx); err != nil {
+		t.Fatalf("refreshTargets() failed: %v", err)
+	}
+
+	if _, ok := p.targets[target.ID]; ok {
+		t.Fatalf("expected deleted target to be removed from prober cache")
+	}
+	if got := testutil.CollectAndCount(m.ProbeUp); got != 0 {
+		t.Fatalf("expected probe_up labels to be removed, got %d metrics", got)
+	}
+	if got := testutil.CollectAndCount(m.ProbeRequestsTotal); got != 0 {
+		t.Fatalf("expected probe_requests_total labels to be removed, got %d metrics", got)
+	}
+}
+
+func TestRefreshTargets_RenameDropsOldMetricLabels(t *testing.T) {
+	s, err := store.NewStorage(":memory:")
+	if err != nil {
+		t.Fatalf("NewStorage() failed: %v", err)
+	}
+	defer s.Close()
+
+	ctx := context.Background()
+	target, err := s.Targets.CreateTarget(ctx, models.Target{
+		Name:     "before-rename",
+		URL:      "http://example.com",
+		Method:   http.MethodGet,
+		Interval: 30,
+		Enabled:  true,
+	})
+	if err != nil {
+		t.Fatalf("CreateTarget() failed: %v", err)
+	}
+
+	m := newMetricsForTest(t)
+	p := NewProber(*s, m)
+	defer p.Stop()
+
+	p.targets[target.ID] = target
+	p.metrics.ProbeUp.WithLabelValues(target.Name).Set(1)
+
+	h := make(PriorityHeap, 0)
+	heap.Init(&h)
+	p.scheduler = &Scheduler{
+		tasks:     &h,
+		taskChan:  make(chan Task, 100),
+		workers:   0,
+		scheduled: make(map[string]Task),
+	}
+
+	if _, err := s.Targets.UpdateTarget(ctx, models.Target{ID: target.ID, Name: "after-rename", Enabled: true}); err != nil {
+		t.Fatalf("UpdateTarget() failed: %v", err)
+	}
+
+	if err := p.refreshTargets(ctx); err != nil {
+		t.Fatalf("refreshTargets() failed: %v", err)
+	}
+
+	if got := testutil.ToFloat64(m.ProbeUp.WithLabelValues("after-rename")); got != 0 {
+		t.Fatalf("expected new label to exist with zero value before first probe, got %v", got)
+	}
+	if got := testutil.CollectAndCount(m.ProbeUp); got != 1 {
+		t.Fatalf("expected only the renamed target metric to remain, got %d metrics", got)
 	}
 }

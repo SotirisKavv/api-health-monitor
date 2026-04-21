@@ -51,7 +51,7 @@ func (s *SQLiteTargetStore) ListTargets(ctx context.Context) ([]models.Target, e
 	}
 	defer rows.Close()
 
-	var targets []models.Target
+	targets := make([]models.Target, 0)
 	for rows.Next() {
 		var target models.Target
 		if err := rows.Scan(&target.ID, &target.Name, &target.URL, &target.Method, &target.Interval, &target.Enabled); err != nil {
@@ -69,7 +69,7 @@ func (s *SQLiteTargetStore) ListEnabledTargets(ctx context.Context) ([]models.Ta
 	}
 	defer rows.Close()
 
-	var targets []models.Target
+	targets := make([]models.Target, 0)
 	for rows.Next() {
 		var target models.Target
 		if err := rows.Scan(&target.ID, &target.Name, &target.URL, &target.Method, &target.Interval, &target.Enabled); err != nil {

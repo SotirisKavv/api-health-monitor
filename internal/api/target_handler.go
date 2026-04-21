@@ -76,6 +76,7 @@ func (h *TargetHandler) GetTarget(w http.ResponseWriter, r *http.Request) {
 		if err.Error() == "target not found" {
 			render.Status(r, http.StatusNotFound)
 			render.JSON(w, r, map[string]string{"error": "Target not found"})
+			return
 		}
 		log.Printf("Failed to get target: %v", err)
 		render.Status(r, http.StatusInternalServerError)

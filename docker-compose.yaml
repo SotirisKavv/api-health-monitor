@@ -8,6 +8,8 @@ services:
     environment:
       ADDR: ":8080"
       DB_PATH: "/data/monitor.db"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/data
 
@@ -28,6 +30,8 @@ services:
       - "3000:3000"
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./deployments/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deployments/monitoring/grafana-dashboard.json:/var/lib/grafana/dashboards/api-health-monitor.json:ro
     depends_on:
       - prometheus
 

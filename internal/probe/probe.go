@@ -33,6 +33,15 @@ type Prober struct {
 	mu            sync.Mutex
 }
 
+func (p *Prober) deleteTargetMetrics(targetName string) {
+	p.metrics.ProbeLatencyMs.DeleteLabelValues(targetName)
+	p.metrics.ProbeLastSuccesUnix.DeleteLabelValues(targetName)
+	p.metrics.ProbeUp.DeleteLabelValues(targetName)
+	p.metrics.ProbeRequestsTotal.DeleteLabelValues(targetName, "success")
+	p.metrics.ProbeRequestsTotal.DeleteLabelValues(targetName, "failure")
+	p.metrics.ProbeRequestsTotal.DeleteLabelValues(targetName, "error")
+}
+
 func (p *Prober) fetchTargetAPI(ctx context.Context, target models.Target) (models.Check, error) {
 	check := models.Check{TargetID: target.ID}
 	url := target.URL
@@ -197,8 +206,11 @@ func (p *Prober) refreshTargets(ctx context.Context) error {
 			log.Printf("Added new target: %s", target.ID)
 			p.metrics.SchedulerQueueSize.Set(float64(p.scheduler.ScheduledCount()))
 		} else {
-			if curTarget.URL != target.URL || curTarget.Interval != target.Interval {
+			if curTarget.Name != target.Name || curTarget.URL != target.URL || curTarget.Method != target.Method || curTarget.Interval != target.Interval {
 				p.scheduler.Remove(curTarget)
+				if curTarget.Name != target.Name {
+					p.deleteTargetMetrics(curTarget.Name)
+				}
 				p.scheduler.Submit(Task{
 					target:    target,
 					ExecuteAt: time.Now(),
@@ -215,6 +227,7 @@ func (p *Prober) refreshTargets(ctx context.Context) error {
 
 	for id := range curTargets {
 		p.scheduler.Remove(p.targets[id])
+		p.deleteTargetMetrics(p.targets[id].Name)
 		log.Printf("Removed target: %s", id)
 		p.metrics.SchedulerQueueSize.Set(float64(p.scheduler.ScheduledCount()))
 		delete(p.targets, id)

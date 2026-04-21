@@ -1,0 +1,11 @@
+flowchart LR
+
+User --> API[monitor-api (Go)]
+API --> DB[(SQLite)]
+API --> Scheduler
+Scheduler --> Workers
+Workers --> External[External APIs]
+
+API --> Metrics[/metrics/]
+Metrics --> Prometheus
+Prometheus --> Grafana

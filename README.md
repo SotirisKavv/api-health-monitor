@@ -1,6 +1,39 @@
-# api-health-monitor (Go + k3s)
+# API Health Monitor (Go + Kubernetes)
 
-A lightweight API health monitor written in Go, with SQLite storage and Prometheus metrics.
+A lightweight API health monitor written in Go, with scheduling, metrics and observability (Prometheus + Grafana).
+
+## Overview
+This service allows registering API endpoints, periodically probing them, and exposing metrics for monitoring.
+
+Key features:
+- Concurrent probe execution with scheduler + worker pool pattern
+- Database persistence (Currently used SQLite, but with the repository pattern, any other DBMS can be easily used)
+- Prometheus metrics
+- Grafana dashboards
+- Kubernetes deployment
+
+## Architecture
+```mermaid
+  flowchart LR
+
+  User --> API[monitor-api (Go)]
+  API --> DB[(SQLite)]
+  API --> Scheduler
+  Scheduler --> Workers
+  Workers --> External[External APIs]
+
+  API --> Metrics[/metrics/]
+  Metrics --> Prometheus
+  Prometheus --> Grafana
+```
+
+### Features
+- Target CRUD
+- Priority-based scheduler
+- Worker pool
+- Retry + timeout handling
+- Metrics export
+- Kubernetes-ready
 
 ## Run locally
 
@@ -85,6 +118,21 @@ curl -i http://monitor.local/v1/targets
 
 If needed, map it in `/etc/hosts` to your k3s node IP.
 
+## Screenshots
+
+### Targets API
+
+Current targets exposed by the k3s ingress:
+
+![Targets API](docs/screenshots/api-targets.png)
+
+### Grafana Dashboard
+
+Current k3s dashboard view showing real probe results for Mealie and Linkding:
+
+![Grafana dashboard 1](docs/screenshots/grafana-dashboard-1.png)
+![Grafana dashboard 2](docs/screenshots/grafana-dashboard-2.png)
+
 ## Logs and debugging
 
 Deployment logs:
@@ -122,9 +170,15 @@ Then open:
 - Prometheus: `http://localhost:9090`
 - Grafana: `http://localhost:3000`
 
-### Important metric note
+## Metrics
 
-Metrics like `probe_up`, `probe_latency_ms`, and `probe_requests_total` only appear after at least one target exists and has been probed.
+- `probe_requests_total`
+- `probe_latency_ms`
+- `probe_up`
+- `probe_last_success_timestamp`
+- `scheduler_queue_size`
+- `probe_runs_in_flight`
+
 
 Create one target quickly:
 
